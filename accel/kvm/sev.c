@@ -422,6 +422,36 @@ err:
 }
 
 static int
+sev_debug_decrypt(SEVState *s, uint8_t *dst, const uint8_t *src, uint32_t len)
+{
+    int ret, error;
+    struct kvm_sev_dbg *dbg;
+
+    if (!s) {
+        return 1;
+    }
+
+    dbg = g_malloc0(sizeof(*dbg));
+    if (!dbg) {
+        return 1;
+    }
+
+    dbg->src_addr = (unsigned long)src;
+    dbg->dst_addr = (unsigned long)dst;
+    dbg->length = len;
+
+    ret = sev_ioctl(KVM_SEV_DBG_DECRYPT, dbg, &error);
+    if (ret) {
+        fprintf(stderr, "Error DEBUG_DECRYPT ret=%d fw_error=%d '%s'\n",
+                ret, error, fw_error_to_str(error));
+        memcpy(dst, src, len);
+    }
+
+    g_free(dbg);
+    return ret;
+}
+
+static int
 sev_mem_write(uint8_t *dst, const uint8_t *src, uint32_t len, MemTxAttrs attrs)
 {
     SEVState *s = kvm_memcrypt_get_handle();
@@ -437,7 +467,11 @@ sev_mem_write(uint8_t *dst, const uint8_t *src, uint32_t len, MemTxAttrs attrs)
 static int
 sev_mem_read(uint8_t *dst, const uint8_t *src, uint32_t len, MemTxAttrs attrs)
 {
-    return 0;
+    SEVState *s = kvm_memcrypt_get_handle();
+
+    assert(attrs.debug);
+
+    return sev_debug_decrypt(s, dst, src, len);
 }
 
 bool
