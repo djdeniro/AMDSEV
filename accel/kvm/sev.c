@@ -352,6 +352,75 @@ err:
     return ret;
 }
 
+static void
+print_hex_dump(const char *prefix_str, uint8_t *data, int len)
+{
+    int i;
+
+    DPRINTF("%s: ", prefix_str);
+    for (i = 0; i < len; i++) {
+        DPRINTF("%02hhx", *data++);
+    }
+    DPRINTF("\n");
+}
+
+static int
+sev_launch_finish(QSevGuestInfo *sev)
+{
+    int error, ret = 1;
+    uint8_t *data = NULL;
+    struct kvm_sev_launch_measure *measure;
+
+    measure = g_malloc0(sizeof(*measure));
+    if (!measure) {
+        return 1;
+    }
+
+    /* query measurement blob length */
+    ret = sev_ioctl(KVM_SEV_LAUNCH_MEASURE, measure, &error);
+    if (!measure->length) {
+        error_report("%s: LAUNCH_MEASURE ret=%d fw_error=%d '%s'\n",
+                __func__, ret, error, fw_error_to_str(error));
+        ret = 1;
+        goto err;
+    }
+    object_property_set_int(OBJECT(sev), SEV_STATE_SECRET, "state",
+                        &error_abort);
+
+    data = g_malloc0(measure->length);
+    if (!data) {
+        ret = 1;
+        goto err;
+    }
+    measure->address = (unsigned long)data;
+
+    /* get measurement */
+    ret = sev_ioctl(KVM_SEV_LAUNCH_MEASURE, measure, &error);
+    if (ret) {
+        error_report("%s: LAUNCH_MEASURE ret=%d fw_error=%d '%s'\n",
+                __func__, ret, error, fw_error_to_str(error));
+        goto err;
+    }
+
+    print_hex_dump("SEV: MEASUREMENT", data, measure->length);
+
+    /* finalize the launch */
+    ret = sev_ioctl(KVM_SEV_LAUNCH_FINISH, 0, &error);
+    if (ret) {
+        error_report("%s: LAUNCH_FINISH ret=%d fw_error=%d '%s'\n",
+                __func__, ret, error, fw_error_to_str(error));
+        goto err;
+    }
+
+    object_property_set_int(OBJECT(sev), SEV_STATE_RUNNING, "state",
+                        &error_abort);
+    DPRINTF("SEV: LAUNCH_FINISH\n");
+err:
+    g_free(data);
+    g_free(measure);
+    return ret;
+}
+
 static int
 sev_mem_write(uint8_t *dst, const uint8_t *src, uint32_t len, MemTxAttrs attrs)
 {
@@ -380,6 +449,17 @@ sev_object_check(const char *id)
     }
 
     return false;
+}
+
+static void sev_vm_state_change(void *opaque, int running, RunState state)
+{
+    SEVState *s = opaque;
+
+    if (running) {
+        if (sev_get_current_state(s->sev_info) == SEV_STATE_LUPDATE) {
+            sev_launch_finish(s->sev_info);
+        }
+    }
 }
 
 void *
@@ -422,6 +502,7 @@ sev_guest_init(const char *id)
         goto err;
     }
 
+    qemu_add_vm_change_state_handler(sev_vm_state_change, s);
     return s;
 err:
     g_free(s);
