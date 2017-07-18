@@ -1353,6 +1353,166 @@ struct kvm_s390_ucas_mapping {
 /* Available with KVM_CAP_S390_CMMA_MIGRATION */
 #define KVM_S390_GET_CMMA_BITS      _IOW(KVMIO, 0xb8, struct kvm_s390_cmma_log)
 #define KVM_S390_SET_CMMA_BITS      _IOW(KVMIO, 0xb9, struct kvm_s390_cmma_log)
+/* Memory Encryption Commands */
+#define KVM_MEMORY_ENCRYPT_OP	  _IOWR(KVMIO, 0xba, unsigned long)
+#define KVM_MEMORY_ENCRYPT_REGISTER_RAM	   _IOR(KVMIO, 0xbb, \
+						struct kvm_memory_encrypt_ram)
+#define KVM_MEMORY_ENCRYPT_UNREGISTER_RAM  _IOR(KVMIO, 0xbc, \
+						struct kvm_memory_encrypt_ram)
+
+struct kvm_memory_encrypt_ram {
+	__u64 address;
+	__u64 size;
+};
+
+/* Secure Encrypted Virtualization command */
+enum sev_cmd_id {
+	/* Guest initialization commands */
+	KVM_SEV_INIT = 0,
+	KVM_SEV_ES_INIT,
+	/* Guest launch commands */
+	KVM_SEV_LAUNCH_START,
+	KVM_SEV_LAUNCH_UPDATE_DATA,
+	KVM_SEV_LAUNCH_UPDATE_VMSA,
+	KVM_SEV_LAUNCH_SECRET,
+	KVM_SEV_LAUNCH_MEASURE,
+	KVM_SEV_LAUNCH_FINISH,
+	/* Guest migration commands (outgoing) */
+	KVM_SEV_SEND_START,
+	KVM_SEV_SEND_UPDATE_DATA,
+	KVM_SEV_SEND_UPDATE_VMSA,
+	KVM_SEV_SEND_FINISH,
+	/* Guest migration commands (incoming) */
+	KVM_SEV_RECEIVE_START,
+	KVM_SEV_RECEIVE_UPDATE_DATA,
+	KVM_SEV_RECEIVE_UPDATE_VMSA,
+	KVM_SEV_RECEIVE_FINISH,
+	/* Guest status and debug commands */
+	KVM_SEV_GUEST_STATUS,
+	KVM_SEV_DBG_DECRYPT,
+	KVM_SEV_DBG_ENCRYPT,
+	/* Guest certificates commands */
+	KVM_SEV_CERT_EXPORT,
+
+	KVM_SEV_NR_MAX,
+};
+
+struct kvm_sev_cmd {
+	__u32 id;
+	__u64 data;
+	__u32 error;
+	__u32 sev_fd;
+};
+
+struct kvm_sev_launch_start {
+	__u32 handle;
+	__u32 policy;
+	__u64 dh_cert_address;
+	__u32 dh_cert_length;
+	__u64 session_address;
+	__u32 session_length;
+};
+
+struct kvm_sev_launch_update_data {
+	__u64 address;
+	__u32 length;
+};
+
+struct kvm_sev_launch_update_vmsa {
+	__u64 address;
+	__u32 length;
+};
+
+struct kvm_sev_launch_secret {
+	__u64 hdr_address;
+	__u32 hdr_length;
+	__u64 guest_address;
+	__u32 guest_length;
+	__u64 trans_address;
+	__u32 trans_length;
+};
+
+struct kvm_sev_launch_measure {
+	__u64 address;
+	__u32 length;
+};
+
+struct kvm_sev_send_start {
+	__u32 policy;
+	__u64 pdh_cert_address;
+	__u32 pdh_cert_length;
+	__u64 plat_cert_address;
+	__u32 plat_cert_length;
+	__u64 amd_cert_address;
+	__u32 amd_cert_length;
+	__u64 session_address;
+	__u32 session_length;
+};
+
+struct kvm_sev_send_update_data {
+	__u64 hdr_address;
+	__u32 hdr_length;
+	__u64 guest_address;
+	__u32 guest_length;
+	__u64 trans_address;
+	__u32 trans_length;
+};
+
+struct kvm_sev_send_update_vmsa {
+	__u64 hdr_address;
+	__u32 hdr_length;
+	__u64 guest_address;
+	__u32 guest_length;
+	__u64 trans_address;
+	__u32 trans_length;
+};
+
+struct kvm_sev_receive_start {
+	__u32 handle;
+	__u32 policy;
+	__u64 pdh_cert_address;
+	__u32 pdh_cert_length;
+	__u64 session_address;
+	__u32 session_length;
+};
+
+struct kvm_sev_receive_update_data {
+	__u64 hdr_address;
+	__u32 hdr_length;
+	__u64 guest_address;
+	__u32 guest_length;
+	__u64 trans_address;
+	__u32 trans_length;
+};
+
+struct kvm_sev_receive_update_vmsa {
+	__u64 hdr_address;
+	__u32 hdr_length;
+	__u64 guest_address;
+	__u32 guest_length;
+	__u64 trans_address;
+	__u32 trans_length;
+};
+
+struct kvm_sev_guest_status {
+	__u32 handle;
+	__u32 policy;
+	__u32 state;
+};
+
+struct kvm_sev_dbg {
+	__u64 src_addr;
+	__u64 dst_addr;
+	__u32 length;
+};
+
+struct kvm_sev_cert_export {
+	__u64 pdh_cert_address;
+	__u32 pdh_cert_length;
+	__u64 cert_chain_address;
+	__u32 cert_chain_length;
+};
+
 
 #define KVM_DEV_ASSIGN_ENABLE_IOMMU	(1 << 0)
 #define KVM_DEV_ASSIGN_PCI_2_3		(1 << 1)
