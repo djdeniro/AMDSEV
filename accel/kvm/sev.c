@@ -85,6 +85,11 @@ static char * fw_error_to_str(int code)
     return sev_fw_errlist[code];
 }
 
+static uint8_t sev_get_current_state(QSevGuestInfo *sev)
+{
+    return object_property_get_int(OBJECT(sev), "state", &error_abort);
+}
+
 static void
 qsev_guest_finalize(Object *obj)
 {
@@ -322,8 +327,41 @@ err:
 }
 
 static int
+sev_launch_update_data(uint8_t *addr, uint64_t len)
+{
+    int ret, fw_error;
+    struct kvm_sev_launch_update_data *update;
+
+    update = g_malloc0(sizeof(*update));
+    if (!update) {
+        return 1;
+    }
+
+    update->address = (__u64)addr;
+    update->length = len;
+    ret = sev_ioctl(KVM_SEV_LAUNCH_UPDATE_DATA, update, &fw_error);
+    if (ret) {
+        error_report("%s: LAUNCH_UPDATE ret=%d fw_error=%d '%s'\n",
+                __func__, ret, fw_error, fw_error_to_str(fw_error));
+        goto err;
+    }
+
+    DPRINTF("SEV: LAUNCH_UPDATE_DATA %#lx+%#lx\n", (unsigned long)addr, len);
+err:
+    g_free(update);
+    return ret;
+}
+
+static int
 sev_mem_write(uint8_t *dst, const uint8_t *src, uint32_t len, MemTxAttrs attrs)
 {
+    SEVState *s = kvm_memcrypt_get_handle();
+
+    if (s && sev_get_current_state(s->sev_info) == SEV_STATE_LUPDATE) {
+        memcpy(dst, src, len);
+        return sev_launch_update_data(dst, len);
+    }
+
     return 0;
 }
 
@@ -397,6 +435,18 @@ sev_set_debug_ops(void *handle, MemoryRegion *mr)
     sev_ops.write = sev_mem_write;
 
     memory_region_set_ram_debug_ops(mr, &sev_ops);
+}
+
+int
+sev_encrypt_launch_buffer(void *handle, uint8_t *ptr, uint64_t len)
+{
+    SEVState *s = (SEVState *)handle;
+
+    if (s && sev_get_current_state(s->sev_info) == SEV_STATE_LUPDATE) {
+        return sev_launch_update_data(ptr, len);
+    }
+
+    return 0;
 }
 
 static void
