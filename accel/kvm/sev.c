@@ -271,6 +271,57 @@ static const TypeInfo qsev_guest_info = {
 };
 
 static int
+sev_launch_start(QSevGuestInfo *sev)
+{
+    gsize sz;
+    int ret = 1;
+    int fw_error;
+    GError *error = NULL;
+    struct kvm_sev_launch_start *start;
+    gchar *session = NULL, *dh_cert = NULL;
+
+    start = g_malloc0(sizeof(*start));
+    if (!start) {
+        return 1;
+    }
+
+    start->policy = sev->policy;
+    start->handle = sev->handle;
+
+    if (sev->session_file) {
+        if (g_file_get_contents(sev->session_file, &session, &sz, &error)) {
+            start->session_address = (unsigned long)session;
+            start->session_length = sz;
+        }
+    }
+
+    if (sev->dh_cert_file) {
+        if (g_file_get_contents(sev->dh_cert_file, &dh_cert, &sz, &error)) {
+            start->dh_cert_address = (unsigned long)session;
+            start->dh_cert_length = sz;
+        }
+    }
+
+    ret = sev_ioctl(KVM_SEV_LAUNCH_START, start, &fw_error);
+    if (ret < 0) {
+        error_report("%s: LAUNCH_START ret=%d fw_error=%d '%s'\n",
+                __func__, ret, fw_error, fw_error_to_str(fw_error));
+        goto err;
+    }
+
+    object_property_set_int(OBJECT(sev), start->handle, "handle", &error_abort);
+    object_property_set_int(OBJECT(sev), SEV_STATE_LUPDATE,
+                    "state", &error_abort);
+
+    DPRINTF("SEV: LAUNCH_START\n");
+err:
+    g_free(start);
+    g_free(session);
+    g_free(dh_cert);
+    return ret;
+}
+
+static int
 sev_mem_write(uint8_t *dst, const uint8_t *src, uint32_t len, MemTxAttrs attrs)
 {
     return 0;
@@ -325,6 +376,11 @@ sev_guest_init(const char *id)
     if (ret) {
         error_report("%s: failed to initialize ret=%d fw_error=%d '%s'\n",
                      __func__, ret, fw_error, fw_error_to_str(fw_error));
+        goto err;
+    }
+
+    /* create launch context */
+    if (sev_launch_start(s->sev_info)) {
         goto err;
     }
 
